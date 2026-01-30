@@ -75,7 +75,6 @@
         };
 
         // --- Helper Functions ---
-        // 컴포넌트 외부에 정의하여 불필요한 재생성 방지
         const calculateAverage = (details) => {
             if (!details) return "0.0";
             const sum = Object.values(details).reduce((a, b) => parseFloat(a) + parseFloat(b), 0);
@@ -169,7 +168,8 @@
             const [evalTab, setEvalTab] = useState('my'); // 'my' or 'husband'
 
             // Form State
-            const initialDetails = { story: 3, art: 3, music: 3, directing: 3, character: 3 };
+            // New Structure: story, artDirecting, music, character, satisfaction
+            const initialDetails = { story: 3, artDirecting: 3, music: 3, character: 3, satisfaction: 3 };
             
             const [formData, setFormData] = useState({
                 title: '',
@@ -182,7 +182,7 @@
                 husbandComment: ''
             });
 
-            // Calculate derived values on the fly (Render Phase)
+            // Derived values for form
             const currentMyRating = useMemo(() => calculateAverage(formData.myDetails), [formData.myDetails]);
             const currentHusbandRating = useMemo(() => calculateAverage(formData.husbandDetails), [formData.husbandDetails]);
             const currentTotalAvg = useMemo(() => ((parseFloat(currentMyRating) + parseFloat(currentHusbandRating)) / 2).toFixed(2), [currentMyRating, currentHusbandRating]);
@@ -215,16 +215,33 @@
                 const unsubscribe = onSnapshot(q, (snapshot) => {
                     const items = snapshot.docs.map(doc => {
                         const data = doc.data();
+                        
+                        // Data Migration Logic (Old -> New Structure)
+                        const migrateDetails = (details, rating) => {
+                            // If it already has satisfaction, assume new structure
+                            if (details && details.satisfaction !== undefined) {
+                                return details;
+                            }
+                            // Fallback for old data
+                            const oldDetails = details || {};
+                            return {
+                                story: oldDetails.story || rating || 3,
+                                // Combine art & directing for new field
+                                artDirecting: oldDetails.art && oldDetails.directing 
+                                    ? parseFloat(((oldDetails.art + oldDetails.directing) / 2).toFixed(1)) 
+                                    : (oldDetails.art || rating || 3),
+                                music: oldDetails.music || rating || 3,
+                                character: oldDetails.character || rating || 3,
+                                // Use previous total rating as initial satisfaction
+                                satisfaction: rating || 3
+                            };
+                        };
+
                         return { 
                             id: doc.id, 
                             ...data,
-                            // DB에서 불러올 때 구조 보정
-                            myDetails: data.myDetails || { 
-                                story: data.myRating || 3, art: data.myRating || 3, music: data.myRating || 3, directing: data.myRating || 3, character: data.myRating || 3 
-                            },
-                            husbandDetails: data.husbandDetails || {
-                                story: data.husbandRating || 3, art: data.husbandRating || 3, music: data.husbandRating || 3, directing: data.husbandRating || 3, character: data.husbandRating || 3
-                            },
+                            myDetails: migrateDetails(data.myDetails, data.myRating),
+                            husbandDetails: migrateDetails(data.husbandDetails, data.husbandRating),
                             myComment: data.myComment || '',
                             husbandComment: data.husbandComment || ''
                         };
@@ -252,7 +269,6 @@
                 if (!formData.title) return;
 
                 try {
-                    // 저장 시점에 최종 계산 수행
                     const finalMyRating = calculateAverage(formData.myDetails);
                     const finalHusbandRating = calculateAverage(formData.husbandDetails);
                     const finalTotalAvg = ((parseFloat(finalMyRating) + parseFloat(finalHusbandRating)) / 2);
@@ -281,16 +297,10 @@
                         alert('기록되었습니다!');
                     }
                     
-                    // Reset Form
                     setFormData({
-                        title: '',
-                        imageUrl: '',
-                        genre: '판타지',
-                        status: 'watched',
-                        myDetails: { ...initialDetails },
-                        husbandDetails: { ...initialDetails },
-                        myComment: '',
-                        husbandComment: ''
+                        title: '', imageUrl: '', genre: '판타지', status: 'watched',
+                        myDetails: { ...initialDetails }, husbandDetails: { ...initialDetails },
+                        myComment: '', husbandComment: ''
                     });
                     setActiveTab('tier');
                 } catch (error) {
@@ -810,10 +820,10 @@
                                                 {evalTab === 'my' ? (
                                                     <div className="animate-fade-in">
                                                         <ScoreSlider label="스토리" value={formData.myDetails.story} onChange={v => handleDetailChange('my', 'story', v)} />
-                                                        <ScoreSlider label="작화" value={formData.myDetails.art} onChange={v => handleDetailChange('my', 'art', v)} />
+                                                        <ScoreSlider label="작화&연출" value={formData.myDetails.artDirecting} onChange={v => handleDetailChange('my', 'artDirecting', v)} />
                                                         <ScoreSlider label="음악" value={formData.myDetails.music} onChange={v => handleDetailChange('my', 'music', v)} />
-                                                        <ScoreSlider label="연출" value={formData.myDetails.directing} onChange={v => handleDetailChange('my', 'directing', v)} />
                                                         <ScoreSlider label="캐릭터" value={formData.myDetails.character} onChange={v => handleDetailChange('my', 'character', v)} />
+                                                        <ScoreSlider label="개인 만족도" value={formData.myDetails.satisfaction} onChange={v => handleDetailChange('my', 'satisfaction', v)} />
                                                         <div className="text-right text-sm text-pink-400 font-bold mt-2 pt-2 border-t border-gray-700">
                                                             보정 평균: {currentMyRating}점
                                                         </div>
@@ -830,10 +840,10 @@
                                                 ) : (
                                                     <div className="animate-fade-in">
                                                         <ScoreSlider label="스토리" value={formData.husbandDetails.story} onChange={v => handleDetailChange('husband', 'story', v)} />
-                                                        <ScoreSlider label="작화" value={formData.husbandDetails.art} onChange={v => handleDetailChange('husband', 'art', v)} />
+                                                        <ScoreSlider label="작화&연출" value={formData.husbandDetails.artDirecting} onChange={v => handleDetailChange('husband', 'artDirecting', v)} />
                                                         <ScoreSlider label="음악" value={formData.husbandDetails.music} onChange={v => handleDetailChange('husband', 'music', v)} />
-                                                        <ScoreSlider label="연출" value={formData.husbandDetails.directing} onChange={v => handleDetailChange('husband', 'directing', v)} />
                                                         <ScoreSlider label="캐릭터" value={formData.husbandDetails.character} onChange={v => handleDetailChange('husband', 'character', v)} />
+                                                        <ScoreSlider label="개인 만족도" value={formData.husbandDetails.satisfaction} onChange={v => handleDetailChange('husband', 'satisfaction', v)} />
                                                         <div className="text-right text-sm text-blue-400 font-bold mt-2 pt-2 border-t border-gray-700">
                                                             우제 평균: {currentHusbandRating}점
                                                         </div>

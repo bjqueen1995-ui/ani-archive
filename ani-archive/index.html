@@ -27,7 +27,7 @@
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
         /* 스크롤바 커스텀 */
-        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #1f2937; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
@@ -152,7 +152,7 @@
             const [user, setUser] = useState(null);
             const [animes, setAnimes] = useState([]);
             const [loading, setLoading] = useState(true);
-            const [activeTab, setActiveTab] = useState('tier');
+            const [activeTab, setActiveTab] = useState('tier'); // tier, ranking, matrix, roulette, add
             
             // Edit Mode State
             const [isEditing, setIsEditing] = useState(false);
@@ -167,8 +167,11 @@
             // Form Tab State (Evaluation)
             const [evalTab, setEvalTab] = useState('my'); // 'my' or 'husband'
 
+            // Ranking Tab State
+            const [rankCategory, setRankCategory] = useState('story');
+            const [rankPerson, setRankPerson] = useState('my');
+
             // Form State
-            // New Structure: story, artDirecting, music, character, satisfaction
             const initialDetails = { story: 3, artDirecting: 3, music: 3, character: 3, satisfaction: 3 };
             
             const [formData, setFormData] = useState({
@@ -216,23 +219,18 @@
                     const items = snapshot.docs.map(doc => {
                         const data = doc.data();
                         
-                        // Data Migration Logic (Old -> New Structure)
                         const migrateDetails = (details, rating) => {
-                            // If it already has satisfaction, assume new structure
                             if (details && details.satisfaction !== undefined) {
                                 return details;
                             }
-                            // Fallback for old data
                             const oldDetails = details || {};
                             return {
                                 story: oldDetails.story || rating || 3,
-                                // Combine art & directing for new field
                                 artDirecting: oldDetails.art && oldDetails.directing 
                                     ? parseFloat(((oldDetails.art + oldDetails.directing) / 2).toFixed(1)) 
                                     : (oldDetails.art || rating || 3),
                                 music: oldDetails.music || rating || 3,
                                 character: oldDetails.character || rating || 3,
-                                // Use previous total rating as initial satisfaction
                                 satisfaction: rating || 3
                             };
                         };
@@ -261,7 +259,7 @@
 
             useEffect(() => {
                 if (window.lucide) window.lucide.createIcons();
-            }, [activeTab, animes, evalTab, showDetailModal]);
+            }, [activeTab, animes, evalTab, showDetailModal, rankCategory, rankPerson]);
 
             // --- Handlers ---
             const handleSave = async (e) => {
@@ -396,6 +394,18 @@
                     }));
             }, [animes]);
 
+            const rankingData = useMemo(() => {
+                const watched = animes.filter(a => a.status === 'watched');
+                const personKey = rankPerson + 'Details'; // myDetails or husbandDetails
+                
+                return watched.sort((a, b) => {
+                    // Descending order
+                    const scoreA = parseFloat(a[personKey][rankCategory] || 0);
+                    const scoreB = parseFloat(b[personKey][rankCategory] || 0);
+                    return scoreB - scoreA;
+                });
+            }, [animes, rankPerson, rankCategory]);
+
             // --- Components ---
             const RenderTierList = () => {
                 const watchedAnimes = animes.filter(a => a.status === 'watched');
@@ -471,59 +481,166 @@
                         </div>
                     </div>
                     
-                    <div className="w-full max-w-4xl h-full flex-1 aspect-square max-h-[80vh] bg-gray-900 rounded-lg p-4">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                                <XAxis 
-                                    type="number" 
-                                    dataKey="x" 
-                                    name="보정" 
-                                    unit="점" 
-                                    domain={[0, 5]} 
-                                    ticks={[0, 1, 2, 3, 4, 5]} 
-                                    stroke="#9CA3AF" 
-                                    label={{ value: '보정', position: 'bottom', fill: '#9CA3AF' }}
-                                />
-                                <YAxis 
-                                    type="number" 
-                                    dataKey="y" 
-                                    name="우제" 
-                                    unit="점" 
-                                    domain={[0, 5]} 
-                                    ticks={[0, 1, 2, 3, 4, 5]} 
-                                    stroke="#9CA3AF" 
-                                    label={{ value: '우제', angle: -90, position: 'left', fill: '#9CA3AF' }}
-                                />
-                                <ReferenceLine x={2.5} stroke="#4B5563" strokeDasharray="3 3" />
-                                <ReferenceLine y={2.5} stroke="#4B5563" strokeDasharray="3 3" />
-                                <Tooltip 
-                                    cursor={{ strokeDasharray: '3 3' }} 
-                                    content={({ active, payload }) => {
-                                        if (active && payload && payload.length) {
-                                            const data = payload[0].payload;
-                                            return (
-                                                <div className="bg-gray-900 border border-gray-600 p-3 rounded shadow-xl text-white z-50">
-                                                    <p className="font-bold text-pink-400">{data.title}</p>
-                                                    <p className="text-sm">보정: {data.x}점 / 우제: {data.y}점</p>
-                                                    <p className="text-xs text-gray-400 mt-1">{data.genre} / {data.tier}</p>
-                                                </div>
-                                            );
-                                        }
-                                        return null;
-                                    }}
-                                />
-                                <Scatter name="Animes" data={matrixData} fill="#F472B6" onClick={(e) => openDetailModal(e.payload.originalItem)}>
-                                    {matrixData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.x >= 4 && entry.y >= 4 ? '#FBBF24' : '#F472B6'} style={{cursor: 'pointer'}} />
-                                    ))}
-                                    <LabelList dataKey="title" position="bottom" offset={8} style={{ fontSize: '10px', fill: '#D1D5DB', pointerEvents: 'none' }} />
-                                </Scatter>
-                            </ScatterChart>
-                        </ResponsiveContainer>
+                    {/* 모바일 스크롤 지원: overflow-auto 및 내부 min-w 설정 */}
+                    <div className="w-full h-full flex-1 bg-gray-900 rounded-lg p-4 overflow-auto">
+                        {/* 최소 너비/높이를 고정하여 모바일에서도 비율 유지 (스크롤 발생) */}
+                        <div className="min-w-[600px] h-[600px] mx-auto">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                                    <XAxis 
+                                        type="number" 
+                                        dataKey="x" 
+                                        name="보정" 
+                                        unit="점" 
+                                        domain={[0, 5]} 
+                                        ticks={[0, 1, 2, 3, 4, 5]} 
+                                        stroke="#9CA3AF" 
+                                        label={{ value: '보정', position: 'bottom', fill: '#9CA3AF' }}
+                                    />
+                                    <YAxis 
+                                        type="number" 
+                                        dataKey="y" 
+                                        name="우제" 
+                                        unit="점" 
+                                        domain={[0, 5]} 
+                                        ticks={[0, 1, 2, 3, 4, 5]} 
+                                        stroke="#9CA3AF" 
+                                        label={{ value: '우제', angle: -90, position: 'left', fill: '#9CA3AF' }}
+                                    />
+                                    <ReferenceLine x={2.5} stroke="#4B5563" strokeDasharray="3 3" />
+                                    <ReferenceLine y={2.5} stroke="#4B5563" strokeDasharray="3 3" />
+                                    <Tooltip 
+                                        cursor={{ strokeDasharray: '3 3' }} 
+                                        content={({ active, payload }) => {
+                                            if (active && payload && payload.length) {
+                                                const data = payload[0].payload;
+                                                return (
+                                                    <div className="bg-gray-900 border border-gray-600 p-3 rounded shadow-xl text-white z-50">
+                                                        <p className="font-bold text-pink-400">{data.title}</p>
+                                                        <p className="text-sm">보정: {data.x}점 / 우제: {data.y}점</p>
+                                                        <p className="text-xs text-gray-400 mt-1">{data.genre} / {data.tier}</p>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        }}
+                                    />
+                                    <Scatter name="Animes" data={matrixData} fill="#F472B6" onClick={(e) => openDetailModal(e.payload.originalItem)}>
+                                        {matrixData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.x >= 4 && entry.y >= 4 ? '#FBBF24' : '#F472B6'} style={{cursor: 'pointer'}} />
+                                        ))}
+                                        <LabelList dataKey="title" position="bottom" offset={8} style={{ fontSize: '10px', fill: '#D1D5DB', pointerEvents: 'none' }} />
+                                    </Scatter>
+                                </ScatterChart>
+                            </ResponsiveContainer>
+                        </div>
                     </div>
                 </div>
             );
+
+            const RenderRanking = () => {
+                const categories = [
+                    { id: 'story', label: '스토리' },
+                    { id: 'artDirecting', label: '작화&연출' },
+                    { id: 'music', label: '음악' },
+                    { id: 'character', label: '캐릭터' },
+                    { id: 'satisfaction', label: '개인 만족도' }
+                ];
+
+                return (
+                    <div className="bg-gray-800 p-6 rounded-xl shadow-xl border border-gray-700 min-h-[90vh] flex flex-col">
+                        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                            <Icon name="list-ordered" className="text-green-400" /> 평가 항목별 순위
+                        </h2>
+
+                        {/* Controls */}
+                        <div className="flex flex-col md:flex-row gap-4 mb-6">
+                            {/* Person Toggle */}
+                            <div className="flex bg-gray-700 rounded-lg p-1">
+                                <button
+                                    onClick={() => setRankPerson('my')}
+                                    className={`flex-1 px-4 py-2 rounded-md text-sm font-bold transition-all ${
+                                        rankPerson === 'my' ? 'bg-pink-600 text-white shadow' : 'text-gray-400 hover:text-white'
+                                    }`}
+                                >
+                                    보정 픽
+                                </button>
+                                <button
+                                    onClick={() => setRankPerson('husband')}
+                                    className={`flex-1 px-4 py-2 rounded-md text-sm font-bold transition-all ${
+                                        rankPerson === 'husband' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'
+                                    }`}
+                                >
+                                    우제 픽
+                                </button>
+                            </div>
+
+                            {/* Category Select */}
+                            <div className="flex-1 overflow-x-auto pb-2 md:pb-0">
+                                <div className="flex gap-2">
+                                    {categories.map(cat => (
+                                        <button
+                                            key={cat.id}
+                                            onClick={() => setRankCategory(cat.id)}
+                                            className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap border transition-all ${
+                                                rankCategory === cat.id 
+                                                    ? 'bg-gray-200 text-gray-900 border-white' 
+                                                    : 'bg-gray-900 text-gray-400 border-gray-700 hover:border-gray-500'
+                                            }`}
+                                        >
+                                            {cat.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Ranking List */}
+                        <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                            {rankingData.map((item, index) => {
+                                const score = item[rankPerson + 'Details'][rankCategory];
+                                let rankColor = "text-gray-400";
+                                if (index === 0) rankColor = "text-yellow-400";
+                                if (index === 1) rankColor = "text-gray-300";
+                                if (index === 2) rankColor = "text-amber-600";
+
+                                return (
+                                    <div 
+                                        key={item.id} 
+                                        onClick={() => openDetailModal(item)}
+                                        className="flex items-center gap-4 bg-gray-900/50 hover:bg-gray-700/50 p-3 rounded-lg cursor-pointer transition-colors border border-gray-800"
+                                    >
+                                        <div className={`w-8 text-center font-bold text-xl ${rankColor}`}>
+                                            {index + 1}
+                                        </div>
+                                        <div className="w-12 h-16 bg-gray-800 rounded overflow-hidden flex-shrink-0">
+                                            {item.imageUrl ? (
+                                                <img src={item.imageUrl} alt="" className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-gray-600"><Icon name="film" size={16}/></div>
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h3 className="text-white font-bold truncate">{item.title}</h3>
+                                            <p className="text-xs text-gray-500">{item.genre} • {item.tier}급</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className={`text-2xl font-bold ${rankPerson === 'my' ? 'text-pink-500' : 'text-blue-500'}`}>
+                                                {score}
+                                            </span>
+                                            <span className="text-xs text-gray-500 ml-1">점</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {rankingData.length === 0 && (
+                                <div className="text-center text-gray-500 py-10">데이터가 없습니다.</div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
 
             const RenderRoulette = () => (
                 <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-8">
@@ -734,6 +851,7 @@
                             <nav className="flex items-center gap-1 sm:gap-2">
                                 <TabButton active={activeTab === 'tier'} onClick={() => { setActiveTab('tier'); setIsEditing(false); }} icon="trophy" label="명예의 전당" />
                                 <TabButton active={activeTab === 'matrix'} onClick={() => setActiveTab('matrix')} icon="bar-chart-2" label="취향 분석" />
+                                <TabButton active={activeTab === 'ranking'} onClick={() => setActiveTab('ranking')} icon="list-ordered" label="항목별 순위" />
                                 <TabButton active={activeTab === 'roulette'} onClick={() => setActiveTab('roulette')} icon="shuffle" label="랜덤 룰렛" />
                                 <TabButton active={activeTab === 'add'} onClick={() => { 
                                     setActiveTab('add'); 
@@ -751,6 +869,7 @@
                     <main className="max-w-7xl mx-auto px-4 py-8">
                         {activeTab === 'tier' && <RenderTierList />}
                         {activeTab === 'matrix' && <RenderMatrix />}
+                        {activeTab === 'ranking' && <RenderRanking />}
                         {activeTab === 'roulette' && <RenderRoulette />}
                         
                         {activeTab === 'add' && (

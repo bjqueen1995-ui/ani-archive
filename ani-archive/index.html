@@ -93,10 +93,10 @@
             if (s >= 3.0) return 'B-';
             if (s >= 2.8) return 'C+';
             if (s >= 2.6) return 'C';
-            return 'F';
+            return 'C-';
         };
 
-        const tierList = ['SS', 'S', 'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'F'];
+        const tierList = ['SS', 'S', 'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-'];
 
         const getTierColor = (tier) => {
             switch (tier) {
@@ -110,7 +110,10 @@
                 case 'B-': return 'bg-blue-400 text-white border-blue-200';
                 case 'C+': return 'bg-green-600 text-white border-green-400';
                 case 'C': return 'bg-green-500 text-white border-green-300';
-                case 'F': return 'bg-gray-600 text-white border-gray-400';
+                case 'C-': return 'bg-gray-600 text-white border-gray-400';
+                // Fallbacks
+                case 'D': return 'bg-gray-600 text-white border-gray-400';
+                case 'F': return 'bg-gray-600 text-white border-gray-400'; 
                 default: return 'bg-gray-500';
             }
         };
@@ -127,7 +130,10 @@
                 case 'B-': return 'B- (보통)';
                 case 'C+': return 'C+ (아쉬움)';
                 case 'C': return 'C (별로)';
-                case 'F': return 'F (폐기급)';
+                case 'C-': return 'C- (비추천)';
+                // Fallbacks
+                case 'D': return 'C- (비추천)';
+                case 'F': return 'C- (비추천)';
                 default: return tier;
             }
         };
@@ -152,7 +158,7 @@
             const [user, setUser] = useState(null);
             const [animes, setAnimes] = useState([]);
             const [loading, setLoading] = useState(true);
-            const [activeTab, setActiveTab] = useState('tier'); // tier, ranking, matrix, roulette, add
+            const [activeTab, setActiveTab] = useState('tier');
             
             // Edit Mode State
             const [isEditing, setIsEditing] = useState(false);
@@ -164,8 +170,8 @@
             const [showDetailModal, setShowDetailModal] = useState(false);
             const [selectedAnime, setSelectedAnime] = useState(null);
 
-            // Form Tab State (Evaluation)
-            const [evalTab, setEvalTab] = useState('my'); // 'my' or 'husband'
+            // Form Tab State
+            const [evalTab, setEvalTab] = useState('my'); 
 
             // Ranking Tab State
             const [rankCategory, setRankCategory] = useState('story');
@@ -185,7 +191,7 @@
                 husbandComment: ''
             });
 
-            // Derived values for form
+            // Derived values
             const currentMyRating = useMemo(() => calculateAverage(formData.myDetails), [formData.myDetails]);
             const currentHusbandRating = useMemo(() => calculateAverage(formData.husbandDetails), [formData.husbandDetails]);
             const currentTotalAvg = useMemo(() => ((parseFloat(currentMyRating) + parseFloat(currentHusbandRating)) / 2).toFixed(2), [currentMyRating, currentHusbandRating]);
@@ -235,9 +241,13 @@
                             };
                         };
 
+                        let displayTier = data.tier;
+                        if (displayTier === 'F' || displayTier === 'D') displayTier = 'C-';
+
                         return { 
                             id: doc.id, 
                             ...data,
+                            tier: displayTier,
                             myDetails: migrateDetails(data.myDetails, data.myRating),
                             husbandDetails: migrateDetails(data.husbandDetails, data.husbandRating),
                             myComment: data.myComment || '',
@@ -396,10 +406,9 @@
 
             const rankingData = useMemo(() => {
                 const watched = animes.filter(a => a.status === 'watched');
-                const personKey = rankPerson + 'Details'; // myDetails or husbandDetails
+                const personKey = rankPerson + 'Details'; 
                 
                 return watched.sort((a, b) => {
-                    // Descending order
                     const scoreA = parseFloat(a[personKey][rankCategory] || 0);
                     const scoreB = parseFloat(b[personKey][rankCategory] || 0);
                     return scoreB - scoreA;
@@ -416,6 +425,12 @@
                             const tierItems = watchedAnimes.filter(a => a.tier === tier);
                             if (tierItems.length === 0) return null;
 
+                            tierItems.sort((a, b) => {
+                                const scoreA = (parseFloat(a.myRating || 0) + parseFloat(a.husbandRating || 0)) / 2;
+                                const scoreB = (parseFloat(b.myRating || 0) + parseFloat(b.husbandRating || 0)) / 2;
+                                return scoreB - scoreA;
+                            });
+
                             return (
                                 <div key={tier} className="animate-fade-in">
                                     <div className={`flex items-center gap-2 p-3 rounded-t-lg font-bold text-lg ${getTierColor(tier)} bg-opacity-90`}>
@@ -424,44 +439,50 @@
                                         <span className="ml-auto text-sm opacity-80">{tierItems.length} 작품</span>
                                     </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2 bg-gray-800 p-4 rounded-b-lg border border-gray-700">
-                                        {tierItems.map(item => (
-                                            <div 
-                                                key={item.id} 
-                                                onClick={() => openDetailModal(item)}
-                                                className="group relative bg-gray-900 rounded-lg overflow-hidden shadow-lg transition-transform hover:-translate-y-1 border border-gray-700 cursor-pointer"
-                                            >
-                                                <div className="aspect-[2/3] w-full bg-gray-800 relative">
-                                                    {item.imageUrl ? (
-                                                        <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <div className="flex items-center justify-center h-full text-gray-500 text-xs text-center p-1">{item.title}</div>
-                                                    )}
-                                                    
-                                                    <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2">
-                                                        <div>
-                                                            <p className="text-white font-bold text-xs line-clamp-2">{item.title}</p>
-                                                            <div className="text-[10px] text-gray-300 mt-1">
-                                                                <div className="flex justify-between"><span>보정</span> <span>{item.myRating}</span></div>
-                                                                <div className="flex justify-between"><span>우제</span> <span>{item.husbandRating}</span></div>
+                                        {tierItems.map(item => {
+                                            const avgScore = ((parseFloat(item.myRating || 0) + parseFloat(item.husbandRating || 0)) / 2).toFixed(2);
+                                            return (
+                                                <div 
+                                                    key={item.id} 
+                                                    onClick={() => openDetailModal(item)}
+                                                    className="group relative bg-gray-900 rounded-lg overflow-hidden shadow-lg transition-transform hover:-translate-y-1 border border-gray-700 cursor-pointer"
+                                                >
+                                                    <div className="aspect-[2/3] w-full bg-gray-800 relative">
+                                                        {item.imageUrl ? (
+                                                            <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <div className="flex items-center justify-center h-full text-gray-500 text-xs text-center p-1">{item.title}</div>
+                                                        )}
+                                                        
+                                                        <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2">
+                                                            <div>
+                                                                <p className="text-white font-bold text-xs line-clamp-2">{item.title}</p>
+                                                                <div className="text-[10px] text-gray-300 mt-1">
+                                                                    <div className="flex justify-between"><span>보정</span> <span>{item.myRating}</span></div>
+                                                                    <div className="flex justify-between"><span>우제</span> <span>{item.husbandRating}</span></div>
+                                                                    <div className="flex justify-between text-purple-300 font-bold border-t border-gray-600 mt-1 pt-1">
+                                                                        <span>부부평균</span> <span>{avgScore}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex justify-end gap-1 pointer-events-auto">
+                                                                <button 
+                                                                    type="button"
+                                                                    onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
+                                                                    className="relative z-10 p-1.5 bg-blue-600 rounded hover:bg-blue-700 text-white transition-colors"
+                                                                    title="수정"
+                                                                >
+                                                                    <Icon name="pencil" size={12} />
+                                                                </button>
                                                             </div>
                                                         </div>
-                                                        <div className="flex justify-end gap-1 pointer-events-auto">
-                                                            <button 
-                                                                type="button"
-                                                                onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
-                                                                className="relative z-10 p-1.5 bg-blue-600 rounded hover:bg-blue-700 text-white transition-colors"
-                                                                title="수정"
-                                                            >
-                                                                <Icon name="pencil" size={12} />
-                                                            </button>
-                                                        </div>
+                                                    </div>
+                                                    <div className="block md:hidden p-1 text-center">
+                                                        <p className="text-[10px] text-gray-300 truncate">{item.title}</p>
                                                     </div>
                                                 </div>
-                                                <div className="block md:hidden p-1 text-center">
-                                                    <p className="text-[10px] text-gray-300 truncate">{item.title}</p>
-                                                </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             );
@@ -481,9 +502,7 @@
                         </div>
                     </div>
                     
-                    {/* 모바일 스크롤 지원: overflow-auto 및 내부 min-w 설정 */}
                     <div className="w-full h-full flex-1 bg-gray-900 rounded-lg p-4 overflow-auto">
-                        {/* 최소 너비/높이를 고정하여 모바일에서도 비율 유지 (스크롤 발생) */}
                         <div className="min-w-[600px] h-[600px] mx-auto">
                             <ResponsiveContainer width="100%" height="100%">
                                 <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
@@ -627,7 +646,7 @@
                                         </div>
                                         <div className="text-right">
                                             <span className={`text-2xl font-bold ${rankPerson === 'my' ? 'text-pink-500' : 'text-blue-500'}`}>
-                                                {score}
+                                                {parseFloat(score)}
                                             </span>
                                             <span className="text-xs text-gray-500 ml-1">점</span>
                                         </div>
